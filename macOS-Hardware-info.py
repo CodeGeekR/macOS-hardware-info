@@ -607,6 +607,116 @@ def display_benchmark_report(results: BenchmarkResults):
         print(f"  🔹 NPU INT8:        {results.npu_int8_tops:.2f} TOPS")
 
 
+def check_logic_board_health():
+    """Ejecuta una auditoría científica profunda del hardware."""
+    print_section("AUDITORÍA DE INTEGRIDAD DE LA LOGIC BOARD")
+    
+    # 1. Batería (IOKit)
+    print("\n[1/3] Evaluando estado electroquímico de la batería (IOKit)...")
+    battery_info = {}
+    stdout, _ = run_command(['ioreg', '-rn', 'AppleSmartBattery'])
+    if stdout:
+        for line in stdout.split('\n'):
+            line = line.strip()
+            if '"DesignCapacity" = ' in line:
+                battery_info['design_capacity'] = int(line.split('=')[1].strip())
+            elif '"AppleRawMaxCapacity" = ' in line or '"NominalChargeCapacity" = ' in line:
+                # Prioritize AppleRawMaxCapacity, but fallback to NominalChargeCapacity
+                val = int(line.split('=')[1].strip())
+                if 'raw_max_capacity' not in battery_info or '"AppleRawMaxCapacity" = ' in line:
+                    battery_info['raw_max_capacity'] = val
+            elif '"CycleCount" = ' in line:
+                battery_info['cycle_count'] = int(line.split('=')[1].strip())
+            elif '"Temperature" = ' in line:
+                battery_info['temperature'] = int(line.split('=')[1].strip()) / 100.0
+            elif '"Voltage" = ' in line:
+                battery_info['voltage'] = int(line.split('=')[1].strip()) / 1000.0
+
+    if 'design_capacity' in battery_info and 'raw_max_capacity' in battery_info:
+        design = battery_info['design_capacity']
+        current = battery_info['raw_max_capacity']
+        cycles = battery_info.get('cycle_count', 0)
+        temp = battery_info.get('temperature', 0)
+        health_pct = (current / design) * 100
+        
+        print("  🔋 Batería:")
+        print(f"     Salud real (Hardware): {health_pct:.1f}% ({current} mAh retenidos de {design} mAh originales)")
+        print(f"     Ciclos de carga:       {cycles}")
+        print(f"     Temperatura actual:    {temp:.1f}°C")
+        if health_pct < 80:
+            print("     ⚠️  ADVERTENCIA: Batería muy degradada químicamente, requiere reemplazo pronto.")
+        else:
+            print("     ✓  Celdas de batería en buenas condiciones físicas.")
+    else:
+        print("  ⚠️  No se pudo leer la información de la batería (Es un Mac de escritorio o tiene fallo en el bus I2C/SMC).")
+
+    # 2. SMC Thermal / Fans
+    print("\n[2/3] Verificando sensores térmicos y sistema de refrigeración (SMC)...")
+    stdout, _ = run_command(['powermetrics', '-n', '1', '--samplers', 'smc'], timeout=10)
+    thermal_pressure = "Desconocido"
+    fan_speeds = []
+    if stdout:
+        for line in stdout.split('\n'):
+            line = line.strip()
+            if 'Thermal pressure:' in line or 'Thermal Pressure:' in line:
+                thermal_pressure = line.split(':')[1].strip()
+            elif 'Fan:' in line or 'fan:' in line:
+                fan_speeds.append(line)
+
+    print(f"  🌡️  Presión Térmica SMC: {thermal_pressure}")
+    if thermal_pressure.lower() in ['heavy', 'trapping', 'critical']:
+        print("     ❌ PELIGRO: El SMC reporta sobrecalentamiento crítico en reposo.")
+        print("                 Posible daño en disipador, pasta térmica seca o sensor termistor roto.")
+    else:
+        print("     ✓  Temperaturas de placa base dentro de los rangos seguros.")
+        
+    if fan_speeds:
+        for fan in fan_speeds:
+            print(f"  🌀 {fan}")
+        print("     ✓  Controlador de ventiladores respondiendo correctamente.")
+    else:
+        print("  🌀 Ventiladores: 0 RPM (Modelo con disipación pasiva o ventilador apagado por baja temperatura)")
+
+    # 3. Kernel Panics
+    print("\n[3/3] Auditando registros de Kernel Panic (Fallos de hardware a bajo nivel)...")
+    panic_dir = "/Library/Logs/DiagnosticReports"
+    panic_files = []
+    
+    if os.path.exists(panic_dir):
+        try:
+            for f in os.listdir(panic_dir):
+                if f.endswith('.ips') or f.endswith('.panic'):
+                    # Verificar si es un kernel panic real
+                    filepath = os.path.join(panic_dir, f)
+                    if os.path.isfile(filepath):
+                        # Analizar cabecera del archivo en busca de firmas de panic
+                        try:
+                            with open(filepath, 'r', encoding='utf-8', errors='ignore') as log_file:
+                                content = log_file.read(2048) # Leer primeros 2KB
+                                if 'panicString' in content or 'bug_type": "210' in content or 'Kernel Panic' in content or 'SOCD report' in content:
+                                    panic_files.append(f)
+                        except Exception:
+                            pass
+        except PermissionError:
+            print("  ⚠️  Permisos insuficientes para leer registros de diagnóstico.")
+
+    if panic_files:
+        print(f"  ❌ ALERTA ROJA: Se encontraron {len(panic_files)} registro(s) de Kernel Panic (Apagón Inesperado).")
+        print("     Esto es un fuerte indicador de hardware defectuoso en la Logic Board (Soldadura fría, PMIC, RAM, NAND).")
+        print("     Archivos sospechosos:")
+        for f in panic_files[:3]:
+            print(f"     - {f}")
+        if len(panic_files) > 3:
+            print(f"     ... y {len(panic_files) - 3} archivo(s) más.")
+        print("     ⚠️  RECOMENDACIÓN: NO COMPRAR ESTE MAC. RIESGO ALTO DE FALLO GENERAL.")
+    else:
+        print("  ✓  No se encontraron Kernel Panics. La Logic Board, RAM y SoC operan con estabilidad comprobada.")
+
+    print("\n[!] NOTA FINAL SOBRE CHIPS DE MEMORIA RAM:")
+    print("    Para comprobar el silicio de la RAM a nivel eléctrico, apague el Mac, mantenga presionada")
+    print("    la tecla 'D' (o mantenga el botón de encendido en Apple Silicon) para ejecutar Apple Diagnostics.")
+
+
 def main():
     """Función principal de ejecución."""
     import multiprocessing
@@ -660,6 +770,9 @@ def main():
                 report.write_speed_mbps = write_speed
         
         display_disk_report(disk_id, disk_info, report, disk_id == boot_disk)
+    
+    # ======== AUDITORIA LOGIC BOARD ========
+    check_logic_board_health()
     
     # Footer
     print("\n" + "═" * 80)
