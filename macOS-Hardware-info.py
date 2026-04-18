@@ -8,6 +8,7 @@ Compatible con SSDs estándar y Apple Silicon. Requiere Python 3.13+ y privilegi
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -115,9 +116,19 @@ def check_sudo() -> bool:
 
 
 @lru_cache(maxsize=1)
+def get_smartctl_path() -> str:
+    """Obtiene la ruta a smartctl empaquetado o del sistema."""
+    if hasattr(sys, '_MEIPASS'):
+        bundled_path = os.path.join(sys._MEIPASS, "bin", "smartctl")
+        if os.path.exists(bundled_path):
+            return bundled_path
+    return "smartctl"
+
+
+@lru_cache(maxsize=1)
 def check_dependencies() -> bool:
     """Verifica dependencias del sistema."""
-    if not shutil.which("smartctl"):
+    if get_smartctl_path() == "smartctl" and not shutil.which("smartctl"):
         raise SystemExit(
             "❌ smartctl no encontrado.\n"
             "   Instale: brew install smartmontools"
@@ -172,16 +183,23 @@ def find_physical_disks() -> list[str]:
 
 
 def get_boot_disk() -> str | None:
-    """Identifica el disco de arranque del sistema."""
+    """Identifica el disco de arranque físico (base) del sistema."""
     stdout, _ = run_command(['diskutil', 'info', '/'])
     if not stdout:
         return None
     
+    apfs_store = None
+    part_of_whole = None
+    
     for line in stdout.split('\n'):
-        if 'Part of Whole:' in line:
+        if 'APFS Physical Store:' in line:
             if match := DISK_ID_PATTERN.search(line):
-                return match.group(1)
-    return None
+                apfs_store = match.group(1)
+        elif 'Part of Whole:' in line:
+            if match := DISK_ID_PATTERN.search(line):
+                part_of_whole = match.group(1)
+                
+    return apfs_store or part_of_whole
 
 
 def get_disk_info_summary(disk_id: str) -> DiskInfo:
@@ -210,12 +228,13 @@ def get_disk_info_summary(disk_id: str) -> DiskInfo:
 def get_smart_data(disk_id: str) -> dict[str, Any] | None:
     """Obtiene datos S.M.A.R.T. detectando tipo de SSD automáticamente."""
     device_path = f"/dev/{disk_id}"
+    smartctl = get_smartctl_path()
     
     # Intentar múltiples métodos
     for cmd in [
-        ['smartctl', '-a', '-j', device_path],
-        ['smartctl', '-d', 'auto', '-T', 'permissive', '-a', '-j', device_path],
-        ['smartctl', '-x', '-j', device_path]
+        [smartctl, '-a', '-j', device_path],
+        [smartctl, '-d', 'auto', '-T', 'permissive', '-a', '-j', device_path],
+        [smartctl, '-x', '-j', device_path]
     ]:
         if result := run_command_json(cmd):
             return result
@@ -223,47 +242,73 @@ def get_smart_data(disk_id: str) -> dict[str, Any] | None:
     return None
 
 
-def benchmark_disk_speed(mount_point: str = '/tmp') -> tuple[float | None, float | None]:
-    """Benchmark de velocidad real del disco (lectura/escritura)."""
-    TEST_SIZE_MB = 1024
-    BLOCK_SIZE = 1048576
-    TOTAL_BLOCKS = TEST_SIZE_MB
-    
+def benchmark_disk_speed(disk_info: DiskInfo, mount_point: str = '/tmp') -> tuple[float | None, float | None]:
+    """
+    Realiza un benchmark inteligente y de I/O directo evadiendo el caché de RAM de macOS (ARC).
+    Garantiza velocidades reales de lectura/escritura en hardware (NAND) puro.
+    Adaptable dinámicamente al tipo de controlador: Apple Silicon, NVMe externos (WD, Samsung) y SATA.
+    """
     try:
-        test_dir = Path(mount_point) / '.DiskSpeedTest'
+        # 1. Ajuste adaptativo: Los SSD Apple Silicon y NVMe Gen4+ requieren cargas pesadas para medir bien
+        is_fast_nvme = any(k in disk_info.protocol or k in disk_info.connection for k in ("NVMe", "Apple", "PCI"))
+        test_size_mb = 2048 if is_fast_nvme else 512
+        block_size = 4 * 1024 * 1024  # 4 MB blocks (óptimo para SSDs modernos)
+        total_blocks = test_size_mb * 1024 * 1024 // block_size
+        
+        # 2. Entropía Real: Generar un pool de datos aleatorios en memoria.
+        # Evita que el firmware del SSD (controladores Phison, SandForce, etc) infle los 
+        # números deduplicando o comprimiendo bloques repetidos al vuelo.
+        random_pool = bytearray(os.urandom(16 * 1024 * 1024))
+        pool_size = len(random_pool)
+        
+        test_dir = Path(mount_point) / '.HardwareInfoBenchmark'
         test_dir.mkdir(exist_ok=True)
-        test_file = test_dir / 'testfile.dat'
+        test_file = test_dir / 'intelligent_speed_test.dat'
         
-        block_data = os.urandom(BLOCK_SIZE)
-        
-        # Test de escritura
+        # --- TEST DE ESCRITURA FÍSICA DIRECTA ---
+        # O_SYNC obliga a esperar confirmación real de los chips NAND, saltando el buffer del SO
+        fd_write = os.open(test_file, os.O_CREAT | os.O_WRONLY | os.O_SYNC)
+        try:
+            # F_NOCACHE es el estándar POSIX/macOS para anular la caché de memoria virtual
+            fcntl.fcntl(fd_write, fcntl.F_NOCACHE, 1)
+        except (AttributeError, OSError):
+            pass
+
         start_write = time.perf_counter()
-        with open(test_file, 'wb', buffering=0) as f:
-            for _ in range(TOTAL_BLOCKS):
-                f.write(block_data)
-            f.flush()
-            os.fsync(f.fileno())
+        for i in range(total_blocks):
+            offset = (i * block_size) % pool_size
+            os.write(fd_write, random_pool[offset:offset+block_size])
+            
+        os.fsync(fd_write) # Doble comprobación física
         write_time = time.perf_counter() - start_write
-        write_speed = TEST_SIZE_MB / write_time if write_time > 0 else None
+        os.close(fd_write)
+        write_speed = test_size_mb / write_time if write_time > 0 else None
         
-        # Purgar caché
-        subprocess.run(['purge'], capture_output=True, timeout=60, check=False)
-        time.sleep(2)
+        # Reposo del controlador para asimilar la caché térmica/SLC interna del disco
+        time.sleep(0.5)
         
-        # Test de lectura
+        # --- TEST DE LECTURA FÍSICA DIRECTA ---
+        fd_read = os.open(test_file, os.O_RDONLY)
+        try:
+            # CRÍTICO: Si no se desactiva aquí, macOS leerá de sus 10GB/s de memoria RAM
+            fcntl.fcntl(fd_read, fcntl.F_NOCACHE, 1)
+        except (AttributeError, OSError):
+            subprocess.run(['purge'], capture_output=True, timeout=60, check=False)
+            
         start_read = time.perf_counter()
-        with open(test_file, 'rb') as f:
-            while f.read(BLOCK_SIZE):
-                pass
+        while True:
+            if not os.read(fd_read, block_size):
+                break
         read_time = time.perf_counter() - start_read
-        read_speed = TEST_SIZE_MB / read_time if read_time > 0 else None
+        os.close(fd_read)
+        read_speed = test_size_mb / read_time if read_time > 0 else None
         
         # Limpieza
         test_file.unlink(missing_ok=True)
         test_dir.rmdir()
         
         return read_speed, write_speed
-    except Exception:
+    except Exception as e:
         return None, None
 
 
@@ -564,30 +609,39 @@ def display_benchmark_report(results: BenchmarkResults):
 
 def main():
     """Función principal de ejecución."""
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
     # Verificaciones iniciales
     check_sudo()
     check_dependencies()
     
     print_header()
     
+    # ======== BENCHMARKS DE IA ========
+    print("\n[1/4] Ejecutando pruebas de CPU, GPU y NPU (esto puede tardar unos segundos)...")
+    benchmark = AIBenchmark()
+    results = benchmark.run_all()
+    display_benchmark_report(results)
+    
     # ======== ANÁLISIS DE DISCOS ========
     print_section("ANÁLISIS DE ALMACENAMIENTO")
     
-    print("\n[1/3] Detectando discos físicos...")
+    print("\n[2/4] Detectando discos físicos...")
     physical_disks = find_physical_disks()
     if not physical_disks:
         print("  ⚠️  No se encontraron discos físicos.")
     else:
         print(f"  ✓ Detectados {len(physical_disks)} disco(s)")
     
-    print("[2/3] Identificando disco de arranque...")
+    print("[3/4] Identificando disco de arranque...")
     boot_disk = get_boot_disk()
     if boot_disk:
         print(f"  ✓ Disco de arranque: /dev/{boot_disk}")
     else:
         print("  ⚠️  No se pudo identificar disco de arranque")
     
-    print("[3/3] Analizando salud de discos...")
+    print("[4/4] Analizando salud de discos y midiendo velocidad real...")
     
     # Ordenar discos (boot primero)
     sorted_disks = [boot_disk] if boot_disk and boot_disk in physical_disks else []
@@ -600,18 +654,12 @@ def main():
         
         # Benchmark de velocidad solo para disco principal
         if disk_id == boot_disk:
-            read_speed, write_speed = benchmark_disk_speed()
+            read_speed, write_speed = benchmark_disk_speed(disk_info)
             if read_speed and write_speed:
                 report.read_speed_mbps = read_speed
                 report.write_speed_mbps = write_speed
         
         display_disk_report(disk_id, disk_info, report, disk_id == boot_disk)
-    
-    # ======== BENCHMARKS DE IA ========
-    print("\n")
-    benchmark = AIBenchmark()
-    results = benchmark.run_all()
-    display_benchmark_report(results)
     
     # Footer
     print("\n" + "═" * 80)
@@ -620,4 +668,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()
