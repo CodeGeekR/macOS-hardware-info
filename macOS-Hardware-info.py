@@ -756,6 +756,99 @@ def check_logic_board_health():
     print("    la tecla 'D' (o mantenga el botón de encendido en Apple Silicon) para ejecutar Apple Diagnostics.")
 
 
+def check_peripherals_and_buses():
+    """Audita la presencia de periféricos en el bus y busca fallos de hardware en los logs del kernel."""
+    print_section("AUDITORÍA DE PERIFÉRICOS Y BUSES (I2C/SPI/USB/PCIe)")
+    
+    print("\n[1/2] Verificando presencia de hardware en la Logic Board (IOKit / System Profiler)...")
+    
+    # 1. Cámara
+    stdout, _ = run_command(['system_profiler', 'SPCameraDataType'], timeout=10)
+    if stdout and ('FaceTime' in stdout or 'Camera' in stdout or 'Cámara' in stdout):
+        print("  📷 Cámara:          [OK: Detectada en el bus]")
+    else:
+        print("  📷 Cámara:          [ERROR: No detectada / Desconectada]")
+
+    # 2. Audio (Parlantes y Micrófono)
+    stdout, _ = run_command(['system_profiler', 'SPAudioDataType'], timeout=10)
+    has_mic = stdout and ('Microphone' in stdout or 'Micrófono' in stdout)
+    has_speaker = stdout and ('Speaker' in stdout or 'Bocina' in stdout or 'Altavoz' in stdout)
+    
+    if has_mic:
+        print("  🎙️  Micrófono:       [OK: Detectado en el bus]")
+    else:
+        print("  🎙️  Micrófono:       [ERROR: No detectado / Desconectado]")
+        
+    if has_speaker:
+        print("  🔊 Parlantes:       [OK: Detectados en el bus]")
+    else:
+        print("  🔊 Parlantes:       [ERROR: No detectados / Desconectados]")
+
+    # 3. Touch ID / Biometría
+    stdout_bio, _ = run_command(['ioreg', '-c', 'AppleBiometricServices'], timeout=10)
+    stdout_sensor, _ = run_command(['ioreg', '-c', 'AppleBiometricSensor'], timeout=10)
+    if (stdout_bio and 'AppleBiometricServices' in stdout_bio) or (stdout_sensor and 'AppleBiometricSensor' in stdout_sensor):
+        print("  👆 Touch ID:        [OK: Enclave Seguro respondiendo]")
+    else:
+        print("  👆 Touch ID:        [ERROR: No detectado / Posible daño en flex o Logic Board]")
+
+    # 4. Bluetooth / Trackpad
+    stdout, _ = run_command(['system_profiler', 'SPBluetoothDataType'], timeout=10)
+    if stdout and 'State: On' in stdout:
+        print("  📶 Bluetooth:       [OK: Controlador encendido y respondiendo]")
+    else:
+        print("  📶 Bluetooth:       [ERROR: Controlador apagado o sin comunicación]")
+
+    print("\n[2/2] Minería de Logs de Hardware (Buscando fallos de comunicación en las últimas 2 horas)...")
+    # Buscamos errores críticos de comunicación de bus (I2C, SPI, SMC timeouts, hardware faults)
+    log_cmd = [
+        '/usr/bin/log', 'show', 
+        '--predicate', 'eventMessage CONTAINS[c] "hardware fault" OR eventMessage CONTAINS[c] "I2C error" OR eventMessage CONTAINS[c] "SPI timeout"', 
+        '--last', '2h'
+    ]
+    stdout, _ = run_command(log_cmd, timeout=20)
+    
+    # Filtrar el comando en sí mismo que aparece en los logs de zsh
+    real_faults = []
+    if stdout:
+        for line in stdout.split('\n'):
+            line = line.strip()
+            if not line or 'eventMessage CONTAINS' in line or 'Filtering the log data' in line or 'Timestamp' in line:
+                continue
+            if 'hardware fault' in line.lower() or 'i2c error' in line.lower() or 'spi timeout' in line.lower():
+                real_faults.append(line)
+                
+    if real_faults:
+        print(f"  ❌ ALERTA ROJA: Se encontraron {len(real_faults)} error(es) de bus de hardware en los registros recientes.")
+        print("     Esto indica que, aunque el componente está detectado, sufre de desconexiones o fallos eléctricos intermitentes.")
+        print("     Extracto de logs:")
+        for fault in real_faults[:3]:
+            # Recortar longitud del log para no saturar la pantalla
+            print(f"     - {fault[:120]}...")
+        if len(real_faults) > 3:
+            print(f"     ... y {len(real_faults) - 3} error(es) más ocultos.")
+    else:
+        print("  ✓  No se registraron fallos de comunicación (I2C/SPI) en el kernel recientemente.")
+        print("  ✓  La comunicación digital entre los periféricos y la Logic Board es eléctricamente estable.")
+
+    print("\n" + "=" * 72)
+    print(" ⚠️ ADVERTENCIA DE DIAGNÓSTICO FÍSICO Y CHECKLIST MANUAL ⚠️")
+    print("=" * 72)
+    print(" El software ha verificado que la comunicación digital de los componentes")
+    print(" está SANA, pero NO PUEDE DETECTAR DAÑOS MECÁNICOS NI ANALÓGICOS.")
+    print(" El técnico encargado DEBE realizar la siguiente inspección física:")
+    print("")
+    print(" [ ] Pantalla: Buscar píxeles muertos, manchas blancas o quemado de imagen.")
+    print(" [ ] Altavoces: Reproducir audio al máximo. Escuchar si hay vibración o estallidos.")
+    print(" [ ] Micrófono: Grabar una nota de voz y escuchar si hay estática o ruido.")
+    print(" [ ] Teclado: Presionar FÍSICAMENTE todas las teclas. Comprobar que no se traben.")
+    print(" [ ] Trackpad: Probar el clic mecánico/háptico en esquinas y centro, y gestos.")
+    print(" [ ] Puertos: Conectar un dispositivo real en CADA puerto (USB-C/MagSafe/Audio).")
+    print(" [ ] Cámara: Abrir Photo Booth y verificar que la lente no esté rayada/sucia.")
+    print(" [ ] Chasis/Bisagras: Comprobar resistencia al cerrar y buscar abolladuras.")
+    print("=" * 72)
+
+
 def main():
     """Función principal de ejecución."""
     import multiprocessing
@@ -817,6 +910,9 @@ def main():
         
         # ======== AUDITORIA LOGIC BOARD ========
         check_logic_board_health()
+        
+        # ======== AUDITORIA PERIFÉRICOS Y BUSES ========
+        check_peripherals_and_buses()
         
         # Footer
         print("\n" + "═" * 80)

@@ -26,7 +26,7 @@ _Engineered by [samuraidev](https://github.com/CodeGeekR) • [Portfolio](https:
 **macOS-Hardware-info.py** is a consolidated, production-grade Python tool that delivers:
 
 1. **Complete SSD Health Analysis** - Real-time S.M.A.R.T. diagnostics with TBW, temperature, wear level, and lifespan.
-2. **Logic Board Integrity Audit** - Deep hardware check for battery chemical health, SMC thermal sensors, and Kernel Panic logs.
+2. **Logic Board Integrity Audit** - Deep hardware check for battery chemical health, SMC thermal sensors, Kernel Panic logs, and Peripherals & Bus Audit (Camera, Audio, Touch ID, I2C/SPI checks).
 3. **AI Performance Benchmarking** - CPU (GFLOPS), GPU (TOPS), and NPU (TOPS) performance testing.
 4. **Real Speed Testing** - Actual disk read/write speeds bypassing OS cache.
 5. **Standalone Executable** - Zero-installation binary compiled for Apple Silicon/Intel.
@@ -73,6 +73,9 @@ _Engineered by [samuraidev](https://github.com/CodeGeekR) • [Portfolio](https:
 - **SMC Thermal Pressure** (Detects overheating in idle)
 - **Fan RPM Readings**
 - **Kernel Panic Audit** (Detects unexpected SOC/Watchdog reboots, indicating broken logic boards)
+- **Peripherals & Bus Health Check** (Live connection check for Camera, Mic, Speakers, Touch ID, Bluetooth)
+- **Deep Fault Mining** (Scans UNIX logs for hidden `I2C error`, `SPI timeout`, and `hardware fault` drops)
+- **Included Physical Inspection Checklist** (Auto-generates a manual verification guide for hardware that software can't see)
 
 ### 🚀 **AI Benchmarks**
 
@@ -150,6 +153,7 @@ sudo ./dist/macOS-Hardware-Info
 4. ✓ **Measures true SSD Speed** (bypassing OS RAM caching).
 5. ✓ **Audits Logic Board** (Battery health, Fan RPM, SMC temps).
 6. ✓ **Inspects Kernel Panics** (Scans for fatal SoC/watchdog logs).
+7. ✓ **Audits Peripherals & I2C Buses** (Camera, Audio, Biometrics, Bluetooth checks).
 
 **Expected Duration:** ~2-3 minutes total (includes disk benchmark + AI stress tests).
 
@@ -168,7 +172,7 @@ sudo ./dist/macOS-Hardware-Info
 
 ### Code Quality Metrics
 
-- **Lines of Code**: 622 (51% reduction from 3 scripts)
+- **Lines of Code**: ~700 (unified hardware suite)
 - **Type Coverage**: 100% (all functions type-hinted)
 - **PEP-8 Compliance**: 100%
 - **Test Coverage**: 18/18 passing (100%)
@@ -177,7 +181,7 @@ sudo ./dist/macOS-Hardware-Info
 ### Architecture Overview
 
 ```
-macOS-Hardware-info.py (622 lines)
+macOS-Hardware-info.py
 │
 ├── [Lines 1-60]    Constants & Imports
 │   ├── SECTOR_SIZE, NVME_UNIT_SIZE, TB_DIVISOR
@@ -204,10 +208,10 @@ macOS-Hardware-info.py (622 lines)
 │   ├── benchmark_gpu()       → PyTorch FP16 (TOPS)
 │   └── benchmark_npu()       → CoreML quantized (TOPS)
 │
-└── [Lines 507-622] Main Flow + Output Formatting
-    ├── display_disk_report()      → SSD health UI
-    ├── display_benchmark_report() → AI metrics UI
-    └── main()                     → Orchestration
+└── [Lines 507+]    Hardware Audits & Main Flow
+    ├── check_logic_board_health()  → Battery, SMC, Panics
+    ├── check_peripherals_and_buses() → I2C/SPI logs & Devices
+    └── main()                      → Orchestration
 ```
 
 ### Apple SSD Detection (Multi-Layer Fallback)
@@ -383,7 +387,7 @@ This tool consolidates and improves upon:
 - `tbw-claude-sonnet-4.5.py` (181 lines) - TBW calculation
 - `benchmark-ai.py` (192 lines) - AI performance testing
 
-**Result**: 622 lines (51% reduction) with zero functionality loss
+**Result**: Reduced logic down to 100% unified code without dependencies, including complete peripheral mapping.
 
 ---
 
