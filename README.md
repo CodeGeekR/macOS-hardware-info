@@ -25,18 +25,18 @@ _Engineered by [samuraidev](https://github.com/CodeGeekR) • [Portfolio](https:
 
 **macOS-Hardware-info.py** is a consolidated, production-grade Python tool that delivers:
 
-1. **Complete SSD Health Analysis** - Real-time S.M.A.R.T. diagnostics with TBW, temperature, wear level, and lifespan
-2. **AI Performance Benchmarking** - CPU (GFLOPS), GPU (TOPS), and NPU (TOPS) performance testing
-3. **Real Speed Testing** - Actual disk read/write speeds using 1GB benchmark tests
-4. **Apple Silicon Support** - Native detection for T2, M1, M2, M3, M4 chips with proprietary controller handling
+1. **Complete SSD Health Analysis** - Real-time S.M.A.R.T. diagnostics with TBW, temperature, wear level, and lifespan.
+2. **Logic Board Integrity Audit** - Deep hardware check for battery chemical health, SMC thermal sensors, and Kernel Panic logs.
+3. **AI Performance Benchmarking** - CPU (GFLOPS), GPU (TOPS), and NPU (TOPS) performance testing.
+4. **Real Speed Testing** - Actual disk read/write speeds bypassing OS cache.
+5. **Standalone Executable** - Zero-installation binary compiled for Apple Silicon/Intel.
 
 ### Why Choose This Tool?
 
-- ✅ **Unified Solution** - Everything in one script (51% less code than 3 separate tools)
-- ✅ **Apple Expertise** - First-class support for Apple proprietary SSDs with IOKit integration
-- ✅ **Real Metrics** - No estimates, only actual hardware measurements
-- ✅ **Professional Code** - PEP-8 compliant, fully type-hinted, 100% test coverage
-- ✅ **Production Ready** - Error handling, fallbacks, and 18/18 passing tests
+- ✅ **Unified Solution** - Everything in one binary (No Python or dependencies required for the user).
+- ✅ **Apple Expertise** - First-class support for Apple proprietary SSDs, APFS physical stores, and IOKit integration.
+- ✅ **Real Metrics** - No OS cache estimates. Real hardware measurements only.
+- ✅ **Scientific Logic Board Audit** - Detects hidden hardware damage (soldering issues, degraded batteries, broken thermistors).
 
 ---
 
@@ -66,21 +66,21 @@ _Engineered by [samuraidev](https://github.com/CodeGeekR) • [Portfolio](https:
 </td>
 <td width="50%" valign="top">
 
-### 🚀 **AI Performance**
+### 🔬 **Logic Board Integrity**
 
-- **CPU Benchmark** (GFLOPS - FP32)
-- **GPU Metal** (TOPS - FP16)
-- **NPU Neural Engine** (TOPS - FP16)
-- **NPU Quantized** (TOPS - INT8 W8A16)
-- **System Info** (cores, RAM, GPU)
+- **Battery Hardware Health** (Actual chemical mAh vs Design mAh)
+- **Real Cycle Count** & **Direct Voltage/Temperature**
+- **SMC Thermal Pressure** (Detects overheating in idle)
+- **Fan RPM Readings**
+- **Kernel Panic Audit** (Detects unexpected SOC/Watchdog reboots, indicating broken logic boards)
 
-**Advanced Features:**
+### 🚀 **AI Benchmarks**
 
-- ✓ Cache-resident models (32×32 tensors)
-- ✓ INT8 weight quantization
-- ✓ Automatic hardware detection
-- ✓ CoreML optimization for ANE
-- ✓ PyTorch MPS acceleration
+- **CPU** (GFLOPS FP32)
+- **GPU Metal** (TOPS FP16)
+- **NPU ANE** (TOPS FP16 & INT8)
+- Real MIL Pipeline Ops
+- PyTorch MPS Acceleration
 
 </td>
 </tr>
@@ -133,93 +133,31 @@ python -c "import torch; import numpy; import psutil; print('✓ All dependencie
 
 ## 🚀 Usage
 
+The easiest way to use the tool is to run the precompiled standalone binary. It requires **zero** installation or external dependencies (no Python, no `smartctl` needed).
+
 ### Basic Execution
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Run with sudo (required for S.M.A.R.T. access)
-sudo python3 macOS-Hardware-info.py
+# 1. Execute directly from the compiled binary (recommended)
+sudo ./dist/macOS-Hardware-Info
 ```
 
 ### What Happens?
 
-1. ✓ Detects all physical disks
-2. ✓ Identifies boot disk
-3. ✓ Retrieves S.M.A.R.T. data
-4. ✓ Runs 1GB speed benchmark
-5. ✓ Executes CPU/GPU/NPU tests
-6. ✓ Displays unified report
+1. ✓ **Executes AI Stress Tests** (CPU/GPU/NPU benchmarks).
+2. ✓ **Detects physical disks** and parses APFS logic stores.
+3. ✓ **Retrieves real S.M.A.R.T. health data**.
+4. ✓ **Measures true SSD Speed** (bypassing OS RAM caching).
+5. ✓ **Audits Logic Board** (Battery health, Fan RPM, SMC temps).
+6. ✓ **Inspects Kernel Panics** (Scans for fatal SoC/watchdog logs).
 
-**Expected Duration:** 2-3 minutes (includes disk benchmark + AI tests)
-
----
-
-## 📊 Real Output Examples
-
-### SSD Health Report
-
-```
-═══════════════════════════════════════════════════════════════════════════════
-  macOS HARDWARE INFO - Análisis Completo de Hardware
-═══════════════════════════════════════════════════════════════════════════════
-
-────────────────────────────────────────────────────────────────────────────────
-  ANÁLISIS DE ALMACENAMIENTO
-────────────────────────────────────────────────────────────────────────────────
-
-[1/3] Detectando discos físicos...
-  ✓ Detectados 1 disco(s)
-[2/3] Identificando disco de arranque...
-  ✓ Disco de arranque: /dev/disk0
-[3/3] Analizando salud de discos...
-
-💾 DISCO PRINCIPAL (Sistema): /dev/disk0
-  Modelo:          APPLE SSD AP0512Q
-  Serie:           C02XXXXXXFVH
-  Capacidad:       500.3 GB
-  Conexión:        PCI-Express (NVMe)
-  Estado SMART:    APROBADO
-  TBW (escritos):  15.43 TB
-  Vida restante:   98%
-  Temperatura:     42°C
-  Tiempo activo:   6 meses, 15 días, 8 horas
-  Ciclos:          618
-  Lectura:         2847 MB/s
-  Escritura:       2394 MB/s
-```
-
-### AI Benchmark Results
-
-```
-────────────────────────────────────────────────────────────────────────────────
-  BENCHMARKS DE RENDIMIENTO DE IA
-────────────────────────────────────────────────────────────────────────────────
-
-  Sistema:  Darwin 23.3.0
-  CPU:      Apple M3 Pro (6P/6L cores)
-  GPU:      MPS (18 cores)
-  RAM:      18.0 GB
-  NPU:      Disponible
-
-  🔹 CPU (FP32):      85.42 GFLOPS
-  🔹 GPU (FP16):      5.23 TOPS
-  🔹 NPU FP16:        12.45 TOPS
-  🔹 NPU INT8:        18.67 TOPS
-
-═══════════════════════════════════════════════════════════════════════════════
-  ✓ Análisis completado exitosamente
-═══════════════════════════════════════════════════════════════════════════════
-```
-
-### Real Benchmark Data (Validated Hardware)
+**Expected Duration:** ~2-3 minutes total (includes disk benchmark + AI stress tests).
 
 | Mac Model            | CPU (GFLOPS) | GPU (TOPS) | NPU FP16 (TOPS) | NPU INT8 (TOPS) | Read Speed | Write Speed |
 | -------------------- | ------------ | ---------- | --------------- | --------------- | ---------- | ----------- |
 | **M3 Pro** (18 GPU)  | 85.42        | 5.23       | 12.45           | 18.67           | 2847 MB/s  | 2394 MB/s   |
 | **M4 Pro** (16 GPU)  | 340.12       | 7.83       | 14.34           | 18.23           | 3200 MB/s  | 2800 MB/s   |
-| **M1** (8 GPU)       | 73.50        | 3.12       | 8.45            | 11.20           | 2400 MB/s  | 2100 MB/s   |
+| **M1 Pro** (16 GPU)  | 218.45       | 4.11       | 10.00           | 10.50           | 2826 MB/s  | 3468 MB/s   |
 | **Intel Mac** (SATA) | 120.00       | N/A        | N/A             | N/A             | 520 MB/s   | 480 MB/s    |
 
 > **Note**: NPU INT8 shows ~50% of theoretical peak due to W8A16 mode (weight-only quantization). Full W8A8 requires calibration datasets.
