@@ -13,7 +13,7 @@
 
 **Professional SSD diagnostics + AI benchmarking unified in a single tool**
 
-_Engineered by [samuraidev](https://github.com/CodeGeekR) • [Portfolio](https://pythonweb.is-a.dev)_
+_Engineered by [samuraidev](https://github.com/CodeGeekR) • [Portfolio](https://arquitectodesoftware.co/)_
 
 [Features](#-features) • [Installation](#-installation) • [Real Output](#-real-output-examples) • [Benchmarks](#-ai-performance-benchmarks) • [Technical](#-technical-details)
 
@@ -406,7 +406,7 @@ of this software and associated documentation files...
 
 ### **samuraidev**
 
-[![Portfolio](https://img.shields.io/badge/Portfolio-pythonweb.is--a.dev-blue?style=for-the-badge&logo=google-chrome&logoColor=white)](https://pythonweb.is-a.dev)
+[![Portfolio](https://img.shields.io/badge/Portfolio-pythonweb.is--a.dev-blue?style=for-the-badge&logo=google-chrome&logoColor=white)](https://arquitectodesoftware.co/)
 [![GitHub](https://img.shields.io/badge/GitHub-samuraidev-black?style=for-the-badge&logo=github&logoColor=white)](https://github.com/samuraidev)
 
 **Expert Software Engineer** specializing in:
