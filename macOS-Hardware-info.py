@@ -10,13 +10,49 @@ from __future__ import annotations
 
 import fcntl
 import json
+import sys
 import os
 import re
-import shutil
-import subprocess
-import sys
-import time
 import warnings
+
+class ReportLogger:
+    def __init__(self):
+        self.terminal = sys.stdout
+        self.log_content = []
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log_content.append(message)
+
+    def flush(self):
+        self.terminal.flush()
+        
+    def get_clean_content(self):
+        raw = "".join(self.log_content)
+        # Limpiar caracteres de retorno de carro y secuencias ANSI si es necesario
+        clean = re.sub(r'.*\r', '', raw)
+        clean = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', clean)
+        return clean
+
+def get_mac_identity() -> str:
+    """Obtiene el modelo y serial del Mac para el nombre del archivo del reporte."""
+    model = "Mac"
+    serial = "UNKNOWN"
+    chip = ""
+    
+    stdout, _ = run_command(['system_profiler', 'SPHardwareDataType'])
+    if stdout:
+        for line in stdout.split('\n'):
+            line = line.strip()
+            if line.startswith('Model Name:'):
+                model = line.split(':')[1].strip().replace(' ', '')
+            elif line.startswith('Chip:') or line.startswith('Processor Name:'):
+                chip = line.split(':')[1].strip().replace(' ', '')
+            elif line.startswith('Serial Number'):
+                serial = line.split(':')[1].strip()
+                
+    parts = [p for p in [model, chip, serial] if p]
+    return "_".join(parts)
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
@@ -722,63 +758,92 @@ def main():
     import multiprocessing
     multiprocessing.freeze_support()
     
-    # Verificaciones iniciales
-    check_sudo()
-    check_dependencies()
+    # Capturar salida en consola para reporte automático
+    logger = ReportLogger()
+    sys.stdout = logger
     
-    print_header()
-    
-    # ======== BENCHMARKS DE IA ========
-    print("\n[1/4] Ejecutando pruebas de CPU, GPU y NPU (esto puede tardar unos segundos)...")
-    benchmark = AIBenchmark()
-    results = benchmark.run_all()
-    display_benchmark_report(results)
-    
-    # ======== ANÁLISIS DE DISCOS ========
-    print_section("ANÁLISIS DE ALMACENAMIENTO")
-    
-    print("\n[2/4] Detectando discos físicos...")
-    physical_disks = find_physical_disks()
-    if not physical_disks:
-        print("  ⚠️  No se encontraron discos físicos.")
-    else:
-        print(f"  ✓ Detectados {len(physical_disks)} disco(s)")
-    
-    print("[3/4] Identificando disco de arranque...")
-    boot_disk = get_boot_disk()
-    if boot_disk:
-        print(f"  ✓ Disco de arranque: /dev/{boot_disk}")
-    else:
-        print("  ⚠️  No se pudo identificar disco de arranque")
-    
-    print("[4/4] Analizando salud de discos y midiendo velocidad real...")
-    
-    # Ordenar discos (boot primero)
-    sorted_disks = [boot_disk] if boot_disk and boot_disk in physical_disks else []
-    sorted_disks.extend(d for d in physical_disks if d != boot_disk)
-    
-    for disk_id in sorted_disks:
-        disk_info = get_disk_info_summary(disk_id)
-        smart_data = get_smart_data(disk_id)
-        report = parse_smart_report(smart_data)
+    try:
+        # Verificaciones iniciales
+        check_sudo()
+        check_dependencies()
         
-        # Benchmark de velocidad solo para disco principal
-        if disk_id == boot_disk:
-            read_speed, write_speed = benchmark_disk_speed(disk_info)
-            if read_speed and write_speed:
-                report.read_speed_mbps = read_speed
-                report.write_speed_mbps = write_speed
+        print_header()
         
-        display_disk_report(disk_id, disk_info, report, disk_id == boot_disk)
-    
-    # ======== AUDITORIA LOGIC BOARD ========
-    check_logic_board_health()
-    
-    # Footer
-    print("\n" + "═" * 80)
-    print("  ✓ Análisis completado exitosamente")
-    print("═" * 80 + "\n")
-
+        # ======== BENCHMARKS DE IA ========
+        print("\n[1/4] Ejecutando pruebas de CPU, GPU y NPU (esto puede tardar unos segundos)...")
+        benchmark = AIBenchmark()
+        results = benchmark.run_all()
+        display_benchmark_report(results)
+        
+        # ======== ANÁLISIS DE DISCOS ========
+        print_section("ANÁLISIS DE ALMACENAMIENTO")
+        
+        print("\n[2/4] Detectando discos físicos...")
+        physical_disks = find_physical_disks()
+        if not physical_disks:
+            print("  ⚠️  No se encontraron discos físicos.")
+        else:
+            print(f"  ✓ Detectados {len(physical_disks)} disco(s)")
+        
+        print("[3/4] Identificando disco de arranque...")
+        boot_disk = get_boot_disk()
+        if boot_disk:
+            print(f"  ✓ Disco de arranque: /dev/{boot_disk}")
+        else:
+            print("  ⚠️  No se pudo identificar disco de arranque")
+        
+        print("[4/4] Analizando salud de discos y midiendo velocidad real...")
+        
+        # Ordenar discos (boot primero)
+        sorted_disks = [boot_disk] if boot_disk and boot_disk in physical_disks else []
+        sorted_disks.extend(d for d in physical_disks if d != boot_disk)
+        
+        for disk_id in sorted_disks:
+            disk_info = get_disk_info_summary(disk_id)
+            smart_data = get_smart_data(disk_id)
+            report = parse_smart_report(smart_data)
+            
+            # Benchmark de velocidad solo para disco principal
+            if disk_id == boot_disk:
+                read_speed, write_speed = benchmark_disk_speed(disk_info)
+                if read_speed and write_speed:
+                    report.read_speed_mbps = read_speed
+                    report.write_speed_mbps = write_speed
+            
+            display_disk_report(disk_id, disk_info, report, disk_id == boot_disk)
+        
+        # ======== AUDITORIA LOGIC BOARD ========
+        check_logic_board_health()
+        
+        # Footer
+        print("\n" + "═" * 80)
+        print("  ✓ Análisis completado exitosamente")
+        
+        # ======== GENERACIÓN DEL REPORTE ========
+        try:
+            sys.stdout = logger.terminal
+            
+            mac_identity = get_mac_identity()
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                
+            report_path = os.path.join(base_dir, f"{mac_identity}.txt")
+            
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(logger.get_clean_content())
+                f.write("\n  ✓ Reporte generado automáticamente.\n")
+                
+            print(f"  📄 Reporte guardado en: {report_path}")
+        except Exception as e:
+            sys.stdout = logger.terminal
+            print(f"  ⚠️ Error guardando el reporte: {e}")
+            
+        print("═" * 80 + "\n")
+        
+    finally:
+        sys.stdout = sys.__stdout__
 
 if __name__ == "__main__":
     import multiprocessing
