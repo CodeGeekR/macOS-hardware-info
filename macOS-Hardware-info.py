@@ -771,8 +771,8 @@ def check_peripherals_and_buses():
 
     # 2. Audio (Parlantes y Micrófono)
     stdout, _ = run_command(['system_profiler', 'SPAudioDataType'], timeout=10)
-    has_mic = stdout and ('Microphone' in stdout or 'Micrófono' in stdout)
-    has_speaker = stdout and ('Speaker' in stdout or 'Bocina' in stdout or 'Altavoz' in stdout)
+    has_mic = stdout and any(k in stdout for k in ('Microphone', 'Micrófono', 'Built-in Micro'))
+    has_speaker = stdout and any(k in stdout for k in ('Speaker', 'Bocina', 'Altavoz', 'Built-in Output', 'Salida integrada', 'Internal Speakers'))
     
     if has_mic:
         print("  🎙️  Micrófono:       [OK: Detectado en el bus]")
@@ -787,10 +787,20 @@ def check_peripherals_and_buses():
     # 3. Touch ID / Biometría
     stdout_bio, _ = run_command(['ioreg', '-c', 'AppleBiometricServices'], timeout=10)
     stdout_sensor, _ = run_command(['ioreg', '-c', 'AppleBiometricSensor'], timeout=10)
-    if (stdout_bio and 'AppleBiometricServices' in stdout_bio) or (stdout_sensor and 'AppleBiometricSensor' in stdout_sensor):
-        print("  👆 Touch ID:        [OK: Enclave Seguro respondiendo]")
+    stdout_ibridge, _ = run_command(['system_profiler', 'SPiBridgeDataType'], timeout=10)
+    
+    has_touchid = False
+    if stdout_bio and 'AppleBiometricServices' in stdout_bio:
+        has_touchid = True
+    elif stdout_sensor and 'AppleBiometricSensor' in stdout_sensor:
+        has_touchid = True
+    elif stdout_ibridge and ('Touch ID' in stdout_ibridge or 'Biometric' in stdout_ibridge):
+        has_touchid = True
+        
+    if has_touchid:
+        print("  👆 Touch ID:        [OK: Enclave Seguro / T2 respondiendo]")
     else:
-        print("  👆 Touch ID:        [ERROR: No detectado / Posible daño en flex o Logic Board]")
+        print("  👆 Touch ID:        [ERROR: No detectado / Mac sin Touch ID o daño en el bus]")
 
     # 4. Bluetooth / Trackpad
     stdout, _ = run_command(['system_profiler', 'SPBluetoothDataType'], timeout=10)
