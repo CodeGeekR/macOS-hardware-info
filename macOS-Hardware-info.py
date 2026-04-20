@@ -774,6 +774,16 @@ def check_peripherals_and_buses():
     has_mic = stdout and any(k in stdout for k in ('Microphone', 'Micrófono', 'Built-in Micro'))
     has_speaker = stdout and any(k in stdout for k in ('Speaker', 'Bocina', 'Altavoz', 'Built-in Output', 'Salida integrada', 'Internal Speakers'))
     
+    # Fallback para Macs Intel (Especialmente con chip T2) donde system_profiler puede fallar o mostrar nombres distintos
+    if not has_mic or not has_speaker:
+        stdout_ioreg_audio, _ = run_command(['ioreg', '-c', 'IOAudioEngine'], timeout=10)
+        stdout_ioreg_t2, _ = run_command(['ioreg', '-c', 'AppleT2Audio'], timeout=10)
+        
+        if stdout_ioreg_audio or stdout_ioreg_t2:
+            # Si detectamos motores de audio en IOKit, asumimos que el hardware de audio está presente
+            has_mic = True
+            has_speaker = True
+    
     if has_mic:
         print("  🎙️  Micrófono:       [OK: Detectado en el bus]")
     else:
@@ -788,9 +798,13 @@ def check_peripherals_and_buses():
     stdout_bio, _ = run_command(['ioreg', '-c', 'AppleBiometricServices'], timeout=10)
     stdout_sensor, _ = run_command(['ioreg', '-c', 'AppleBiometricSensor'], timeout=10)
     stdout_ibridge, _ = run_command(['system_profiler', 'SPiBridgeDataType'], timeout=10)
+    stdout_bioutil, _ = run_command(['bioutil', '-c'], timeout=10)
     
     has_touchid = False
-    if stdout_bio and 'AppleBiometricServices' in stdout_bio:
+    if stdout_bioutil and 'biometric template' in stdout_bioutil.lower():
+        # bioutil es la forma más nativa y confiable de saber si el Touch ID está disponible
+        has_touchid = True
+    elif stdout_bio and 'AppleBiometricServices' in stdout_bio:
         has_touchid = True
     elif stdout_sensor and 'AppleBiometricSensor' in stdout_sensor:
         has_touchid = True
