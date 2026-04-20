@@ -283,20 +283,20 @@ def get_smart_data(disk_id: str) -> dict[str, Any] | None:
 
 def benchmark_disk_speed(disk_info: DiskInfo, mount_point: str = '/tmp') -> tuple[float | None, float | None]:
     """
-    Realiza un benchmark inteligente y de I/O directo evadiendo el caché de RAM de macOS (ARC).
-    Garantiza velocidades reales de lectura/escritura en hardware (NAND) puro.
-    Adaptable dinámicamente al tipo de controlador: Apple Silicon, NVMe externos (WD, Samsung) y SATA.
+    Realiza un benchmark de I/O masivo paralelo evadiendo el caché de RAM de macOS (ARC).
+    Garantiza velocidades de ráfaga (Max Queue Depth) para saturar el bus PCIe y probar el caché SLC de los SSDs NVMe y Apple Silicon.
     """
+    import concurrent.futures
+    import os
+    
     try:
-        # 1. Ajuste adaptativo: Los SSD Apple Silicon y NVMe Gen4+ requieren cargas pesadas para medir bien
+        # 1. Ajuste adaptativo: Cargas más pesadas para SSDs rápidos
         is_fast_nvme = any(k in disk_info.protocol or k in disk_info.connection for k in ("NVMe", "Apple", "PCI"))
-        test_size_mb = 2048 if is_fast_nvme else 512
-        block_size = 4 * 1024 * 1024  # 4 MB blocks (óptimo para SSDs modernos)
-        total_blocks = test_size_mb * 1024 * 1024 // block_size
+        test_size_mb = 4096 if is_fast_nvme else 1024
+        block_size = 16 * 1024 * 1024  # 16 MB blocks (reduce el syscall overhead dramáticamente)
+        total_blocks = (test_size_mb * 1024 * 1024) // block_size
         
-        # 2. Entropía Real: Generar un pool de datos aleatorios en memoria.
-        # Evita que el firmware del SSD (controladores Phison, SandForce, etc) infle los 
-        # números deduplicando o comprimiendo bloques repetidos al vuelo.
+        # 2. Entropía Real: Para evitar compresión al vuelo de los controladores (ej. Phison, SandForce)
         random_pool = bytearray(os.urandom(16 * 1024 * 1024))
         pool_size = len(random_pool)
         
@@ -305,41 +305,60 @@ def benchmark_disk_speed(disk_info: DiskInfo, mount_point: str = '/tmp') -> tupl
         test_file = test_dir / 'intelligent_speed_test.dat'
         
         # --- TEST DE ESCRITURA FÍSICA DIRECTA ---
-        # O_SYNC obliga a esperar confirmación real de los chips NAND, saltando el buffer del SO
-        fd_write = os.open(test_file, os.O_CREAT | os.O_WRONLY | os.O_SYNC)
+        # Removido O_SYNC para permitir al SSD gestionar la memoria caché SLC a máxima velocidad (Burst Speed).
+        fd_write = os.open(test_file, os.O_CREAT | os.O_WRONLY)
         try:
-            # F_NOCACHE es el estándar POSIX/macOS para anular la caché de memoria virtual
+            # F_NOCACHE anula la RAM unificada de Apple, asegurando que los datos van al disco
             fcntl.fcntl(fd_write, fcntl.F_NOCACHE, 1)
         except (AttributeError, OSError):
             pass
+            
+        # Pre-alocar espacio para evitar overhead de fragmentación de APFS
+        try:
+            os.ftruncate(fd_write, test_size_mb * 1024 * 1024)
+        except OSError:
+            pass
+
+        def write_block(i):
+            offset = (i * block_size) % pool_size
+            file_offset = i * block_size
+            os.pwrite(fd_write, random_pool[offset:offset+block_size], file_offset)
 
         start_write = time.perf_counter()
-        for i in range(total_blocks):
-            offset = (i * block_size) % pool_size
-            os.write(fd_write, random_pool[offset:offset+block_size])
+        
+        # Simulación de Queue Depth Alta (Paralelismo) para saturar los carriles NVMe PCIe
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(write_block, range(total_blocks)))
             
-        os.fsync(fd_write) # Doble comprobación física
+        os.fsync(fd_write) # Confirmación física única al final
         write_time = time.perf_counter() - start_write
         os.close(fd_write)
+        
         write_speed = test_size_mb / write_time if write_time > 0 else None
         
-        # Reposo del controlador para asimilar la caché térmica/SLC interna del disco
+        # Reposo para enfriamiento y consolidación del caché SLC interno del disco
         time.sleep(0.5)
         
         # --- TEST DE LECTURA FÍSICA DIRECTA ---
         fd_read = os.open(test_file, os.O_RDONLY)
         try:
-            # CRÍTICO: Si no se desactiva aquí, macOS leerá de sus 10GB/s de memoria RAM
             fcntl.fcntl(fd_read, fcntl.F_NOCACHE, 1)
         except (AttributeError, OSError):
             subprocess.run(['purge'], capture_output=True, timeout=60, check=False)
             
+        def read_block(i):
+            file_offset = i * block_size
+            os.pread(fd_read, block_size, file_offset)
+
         start_read = time.perf_counter()
-        while True:
-            if not os.read(fd_read, block_size):
-                break
+        
+        # Simulación de Queue Depth Alta para lectura
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(read_block, range(total_blocks)))
+            
         read_time = time.perf_counter() - start_read
         os.close(fd_read)
+        
         read_speed = test_size_mb / read_time if read_time > 0 else None
         
         # Limpieza
